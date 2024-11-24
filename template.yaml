@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Lambda API with custom JWT authorizer and protected user endpoints
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.12
+    MemorySize: 256
+    Environment:
+      Variables:
+        JWT_SECRET: !Ref JwtSecret
+        USERS_TABLE: !Ref UsersTable
+
+Parameters:
+  JwtSecret:
+    Type: String
+    NoEcho: true
+    Description: Secret key used for JWT signing and validation
+
+Resources:
+  AuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: authorizer.handler
+      Description: Custom Lambda authorizer that validates JWT tokens
+
+  UsersFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: users.handler
+      Description: Protected CRUD endpoints for user profiles
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+      Events:
+        GetUser:
+          Type: Api
+          Properties:
+            Path: /users/{userId}
+            Method: get
+            RestApiId: !Ref ApiGateway
+        CreateUser:
+          Type: Api
+          Properties:
+            Path: /users
+            Method: post
+            RestApiId: !Ref ApiGateway
+        UpdateUser:
+          Type: Api
+          Properties:
+            Path: /users/{userId}
+            Method: put
+            RestApiId: !Ref ApiGateway
+        DeleteUser:
+          Type: Api
+          Properties:
+            Path: /users/{userId}
+            Method: delete
+            RestApiId: !Ref ApiGateway
+        ListUsers:
+          Type: Api
+          Properties:
+            Path: /users
+            Method: get
+            RestApiId: !Ref ApiGateway
+
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Auth:
+        DefaultAuthorizer: LambdaTokenAuthorizer
+        Authorizers:
+          LambdaTokenAuthorizer:
+            FunctionArn: !GetAtt AuthorizerFunction.Arn
+            FunctionPayloadType: TOKEN
+            Identity:
+              Header: Authorization
+              ReauthorizeEvery: 300
+
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: user-profiles
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/"
+
+  AuthorizerFunctionArn:
+    Description: Authorizer Lambda function ARN
+    Value: !GetAtt AuthorizerFunction.Arn
+
+  UsersFunctionArn:
+    Description: Users Lambda function ARN
+    Value: !GetAtt UsersFunction.Arn
