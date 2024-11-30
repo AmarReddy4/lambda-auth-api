@@ -88,7 +88,3 @@ JWTs include the following claims:
 | role | User role (default: "user") |
 | iat | Issued at timestamp |
 | exp | Expiration timestamp |
-
-## License
-
-MIT
